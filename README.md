@@ -1,13 +1,6 @@
 <div align="center">
   <h1>💞 VKinder — Бот для знакомств в ВКонтакте</h1>
   <p><i>Найди свою пару на основе данных профиля VK</i></p>
-  
-  <img src="https://img.shields.io/badge/python-3.8%2B-blue">
-  <img src="https://img.shields.io/badge/postgresql-12%2B-green">
-  <img src="https://img.shields.io/badge/license-MIT-orange">
-  <img src="https://img.shields.io/badge/version-1.0.0-brightgreen">
-</div>
-
 ---
 
 ## 📋 Оглавление
