@@ -1,9 +1,3 @@
-# Точка входа в приложение
-# !/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-
-
 from bot.handlers import VKinderBot
 from database.db_session import init_db
 import logging
@@ -11,7 +5,7 @@ import logging
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 

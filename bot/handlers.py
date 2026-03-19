@@ -1,334 +1,225 @@
-# Обработчики событий VK LongPoll.
-# Здесь описывается реакция бота на сообщения,
-# нажатия кнопок и переходы между состояниями (FSM).
-from vk_api.longpoll import VkEventType
-from vk_api.keyboard import VkKeyboard, VkKeyboardColor
-from bot.states import UserState, get_user_state, set_user_state, clear_user_state
-from database.repository import VKinderRepository
-from database.db_session import db_session
-from vk_api.client import VKClient, create_keyboard
-from vk_api.search import VKSearch
 import random
+import json
+import vk_api
+from vk_api.longpoll import VkLongPoll, VkEventType
+from vk_api.keyboard import VkKeyboard, VkKeyboardColor
+
+from config import VK_GROUP_TOKEN, VK_USER_TOKEN
+from vk_api.client import VK
+from vk_api.search import SearchService
+from database.db_session import SessionLocal
+from database.repository import VKinderRepository
+from bot.states import UserState, set_user_state
 
 
 class VKinderBot:
     def __init__(self):
-        self.vk_client = VKClient()
-        self.vk_search = VKSearch(self.vk_client)
-        self.repository = VKinderRepository(db_session())
+        # Клиент для поиска (с пользовательским токеном)
+        self.vk_user = VK(access_token=VK_USER_TOKEN, user_id=None)
 
-        # Хранилище для текущих кандидатов
-        self.current_candidates = {}  # user_id -> list of candidates
-        self.current_index = {}  # user_id -> current index
+        # Репозиторий для работы с БД
+        self.repository = VKinderRepository(SessionLocal())
+
+        # Сервис поиска (вся логика поиска и фото)
+        self.search_service = SearchService(self.vk_user, self.repository)
+
+        # Сессия группы для ответов
+        self.vk_group_session = vk_api.VkApi(token=VK_GROUP_TOKEN)
+        self.vk_group = self.vk_group_session.get_api()
+        self.longpoll = VkLongPoll(self.vk_group_session)
+
+        # Хранилища данных
+        self.current_candidate = {}  # текущий кандидат
+        self.current_user = {}  # объект пользователя из БД
 
     def run(self):
         """Запуск бота"""
         print("Бот VKinder запущен...")
-
-        for event in self.vk_client.longpoll.listen():
+        for event in self.longpoll.listen():
             if event.type == VkEventType.MESSAGE_NEW and event.to_me:
                 self.handle_event(event)
 
     def handle_event(self, event):
         """Обработка входящих сообщений"""
         user_id = event.user_id
-        message = event.text.lower()
+        message = event.text.lower().strip()
 
-        # Получаем или создаем пользователя
-        user_info = self.vk_client.get_user_info(user_id)
+        # Получаем или создаём пользователя в БД
+        user_info = self.vk_user.users_info()
         if user_info:
-            self.repository.get_or_create_user(
-                user_id,
-                user_info.get('first_name'),
-                user_info.get('last_name')
+            user = self.repository.get_or_create_user(
+                vk_id=user_id,
+                first_name=user_info.get("first_name", ""),
+                last_name=user_info.get("last_name", ""),
+                gender=user_info.get("sex", 0),
             )
-
-        # Получаем текущее состояние
-        state = get_user_state(user_id)
+            # Сохраняем объект пользователя
+            self.current_user[user_id] = user
 
         # Обработка команд
-        if message in ['начать', 'start', 'меню', 'menu']:
+        if message in ["начать", "меню", "🚫 меню"]:
             self.show_main_menu(user_id)
-        elif message == 'найти пару':
-            self.start_searching(user_id)
-        elif message == 'избранное':
+
+        elif message in ["найти пару", "👎 дальше"]:
+            self.show_next_candidate(user_id)
+
+        elif message == "⭐️ в избранное":
+            self.add_to_favorites(user_id)
+
+        elif message == "избранное":
             self.show_favorites(user_id)
-        elif message == 'настройки':
-            self.show_settings(user_id)
+
         else:
-            self.handle_state(user_id, message, state)
+            # Если команда не распознана - показываем меню
+            self.show_main_menu(user_id)
 
     def show_main_menu(self, user_id):
         """Главное меню"""
         set_user_state(user_id, UserState.MAIN_MENU)
 
         keyboard = VkKeyboard(one_time=False)
-        keyboard.add_button('Найти пару', VkKeyboardColor.POSITIVE)
+        keyboard.add_button("Найти пару", VkKeyboardColor.POSITIVE)
         keyboard.add_line()
-        keyboard.add_button('Избранное', VkKeyboardColor.PRIMARY)
-        keyboard.add_button('Настройки', VkKeyboardColor.SECONDARY)
+        keyboard.add_button("Избранное", VkKeyboardColor.PRIMARY)
 
-        message = (
+        self.send_message(
+            user_id,
             "👋 Привет! Я бот VKinder для поиска пар.\n\n"
-            "Что ты хочешь сделать?"
+            "Что ты хочешь сделать?",
+            keyboard,
         )
 
-        self.vk_client.send_message(user_id, message, keyboard)
+    def show_next_candidate(self, user_id):
+        """Показать следующего кандидата"""
+        # Получаем кандидата через сервис поиска
+        candidate = self.search_service.get_next_candidate(user_id)
 
-    def show_settings(self, user_id):
-        """Меню настроек"""
-        set_user_state(user_id, UserState.SETTINGS)
-
-        user = self.repository.get_user(user_id)
-
-        keyboard = VkKeyboard(one_time=False)
-        keyboard.add_button('Изменить город', VkKeyboardColor.PRIMARY)
-        keyboard.add_line()
-        keyboard.add_button('Изменить возраст', VkKeyboardColor.PRIMARY)
-        keyboard.add_line()
-        keyboard.add_button('Назад', VkKeyboardColor.NEGATIVE)
-
-        current_settings = (
-            f"⚙️ Текущие настройки:\n\n"
-            f"🏙 Город: {user.city if user.city else 'не указан'}\n"
-            f"📅 Возраст: от {user.age_from} до {user.age_to} лет"
-        )
-
-        self.vk_client.send_message(user_id, current_settings, keyboard)
-
-    def handle_state(self, user_id, message, state):
-        """Обработка сообщений в зависимости от состояния"""
-
-        if state == UserState.SETTINGS:
-            if message == 'изменить город':
-                set_user_state(user_id, UserState.SET_CITY)
-                self.vk_client.send_message(
-                    user_id,
-                    "Введи название города для поиска:"
-                )
-            elif message == 'изменить возраст':
-                set_user_state(user_id, UserState.SET_AGE_FROM)
-                self.vk_client.send_message(
-                    user_id,
-                    "Введи минимальный возраст (от 18 до 99):"
-                )
-            elif message == 'назад':
-                self.show_main_menu(user_id)
-
-        elif state == UserState.SET_CITY:
-            self.repository.update_user_preferences(user_id, city=message.capitalize())
-            set_user_state(user_id, UserState.SETTINGS)
-            self.vk_client.send_message(
-                user_id,
-                f"✅ Город {message.capitalize()} сохранен!"
-            )
-            self.show_settings(user_id)
-
-        elif state == UserState.SET_AGE_FROM:
-            try:
-                age = int(message)
-                if 18 <= age <= 99:
-                    self.repository.update_user_preferences(user_id, age_from=age)
-                    set_user_state(user_id, UserState.SET_AGE_TO)
-                    self.vk_client.send_message(
-                        user_id,
-                        "Введи максимальный возраст:"
-                    )
-                else:
-                    self.vk_client.send_message(
-                        user_id,
-                        "❌ Возраст должен быть от 18 до 99. Попробуй снова:"
-                    )
-            except ValueError:
-                self.vk_client.send_message(
-                    user_id,
-                    "❌ Введи число от 18 до 99:"
-                )
-
-        elif state == UserState.SET_AGE_TO:
-            try:
-                age = int(message)
-                if 18 <= age <= 99:
-                    user = self.repository.get_user(user_id)
-                    if age >= user.age_from:
-                        self.repository.update_user_preferences(user_id, age_to=age)
-                        set_user_state(user_id, UserState.SETTINGS)
-                        self.vk_client.send_message(
-                            user_id,
-                            f"✅ Возраст сохранен!"
-                        )
-                        self.show_settings(user_id)
-                    else:
-                        self.vk_client.send_message(
-                            user_id,
-                            f"❌ Максимальный возраст должен быть больше минимального ({user.age_from})"
-                        )
-                else:
-                    self.vk_client.send_message(
-                        user_id,
-                        "❌ Возраст должен быть от 18 до 99. Попробуй снова:"
-                    )
-            except ValueError:
-                self.vk_client.send_message(
-                    user_id,
-                    "❌ Введи число от 18 до 99:"
-                )
-
-    def start_searching(self, user_id):
-        """Начало поиска кандидатов"""
-        user = self.repository.get_user(user_id)
-
-        if not user.city:
-            set_user_state(user_id, UserState.SET_CITY)
-            self.vk_client.send_message(
-                user_id,
-                "Сначала укажи город для поиска:"
-            )
+        if not candidate:
+            # Если кандидатов нет
+            keyboard = VkKeyboard(one_time=False)
+            keyboard.add_button("Найти пару", VkKeyboardColor.POSITIVE)
+            keyboard.add_line()
+            keyboard.add_button("Избранное", VkKeyboardColor.PRIMARY)
+            message_text = "😕 К сожалению, не удалось найти новых кандидатов."
+            self.send_message(user_id, message_text, keyboard)
             return
 
-        # Получаем список уже просмотренных кандидатов
-        viewed_ids = self.repository.get_viewed_candidates(user_id)
+        # Сохраняем текущего кандидата
+        self.current_candidate[user_id] = candidate
 
-        # Ищем новых кандидатов
-        candidates = self.vk_search.find_candidates(
-            {
-                'city': user.city,
-                'sex': user.sex,
-                'age_from': user.age_from,
-                'age_to': user.age_to
-            },
-            viewed_ids
+        # Клавиатура для действий с кандидатом
+        keyboard = VkKeyboard(one_time=False)
+        keyboard.add_button("⭐️ В избранное", VkKeyboardColor.PRIMARY)
+        keyboard.add_button("👎 Дальше", VkKeyboardColor.NEGATIVE)
+        keyboard.add_line()
+        keyboard.add_button("🚫 Меню", VkKeyboardColor.SECONDARY)
+
+        # Отправляем сообщение с фото
+        self.send_message(
+            user_id,
+            f"{candidate['name']}\nСсылка: {candidate['link']}",
+            keyboard,
+            attachment=",".join(candidate["attachments"]),
         )
 
-        if not candidates:
-            self.vk_client.send_message(
-                user_id,
-                "😕 К сожалению, не удалось найти новых кандидатов. Попробуй изменить настройки поиска."
-            )
+    def add_to_favorites(self, user_id):
+        """Добавить текущего кандидата в избранное"""
+        candidate = self.current_candidate.get(user_id)
+        user = self.current_user.get(user_id)
+
+        if not candidate:
+            self.send_message(user_id, "❌ Сначала найди кандидата!")
+            self.show_next_candidate(user_id)
+            return
+
+        if not user:
+            self.send_message(user_id, "❌ Ошибка: пользователь не найден")
             self.show_main_menu(user_id)
             return
 
-        # Сохраняем кандидатов
-        self.current_candidates[user_id] = candidates
-        self.current_index[user_id] = 0
-
-        set_user_state(user_id, UserState.VIEWING_CANDIDATE)
-        self.show_candidate(user_id)
-
-    def show_candidate(self, user_id):
-        """Показ кандидата"""
-        candidates = self.current_candidates.get(user_id, [])
-        index = self.current_index.get(user_id, 0)
-
-        if index >= len(candidates):
-            self.vk_client.send_message(
-                user_id,
-                "🎉 Ты просмотрел всех кандидатов! Начинаем новый поиск..."
-            )
-            self.start_searching(user_id)
-            return
-
-        candidate = candidates[index]
-
-        # Сохраняем кандидата в базу
-        user = self.repository.get_user(user_id)
-        db_candidate = self.repository.save_candidate(user.id, candidate)
-
-        # Клавиатура для действий
-        keyboard = VkKeyboard(one_time=False)
-        keyboard.add_button('❤️ Нравится', VkKeyboardColor.POSITIVE)
-        keyboard.add_button('👎 Не нравится', VkKeyboardColor.NEGATIVE)
-        keyboard.add_line()
-        keyboard.add_button('⭐️ В избранное', VkKeyboardColor.PRIMARY)
-        keyboard.add_line()
-        keyboard.add_button('🚫 Закончить', VkKeyboardColor.SECONDARY)
-
-        # Формируем сообщение
-        age_text = f", {candidate['age']} лет" if candidate.get('age') else ""
-        city_text = f" из {candidate['city']}" if candidate.get('city') else ""
-
-        message = (
-            f"{candidate['first_name']} {candidate['last_name']}{age_text}{city_text}\n"
-            f"Ссылка: {candidate['profile_link']}\n\n"
-            f"Кандидат {index + 1} из {len(candidates)}"
+        # Сохраняем кандидата в БД
+        db_candidate = self.repository.add_candidate(
+            vk_id=candidate["id"],
+            first_name=candidate["name"].split()[0],
+            last_name=(
+                candidate["name"].split()[1]
+                if len(candidate["name"].split()) > 1
+                else ""
+            ),
+            vk_link=candidate["link"],
+            photos_links=json.dumps(candidate["attachments"]),
         )
 
-        # Отправляем с фото
-        self.vk_client.send_photos(user_id, candidate['photos'], message, keyboard)
-
-    def handle_candidate_action(self, user_id, action, candidate_data):
-        """Обработка действий с кандидатом"""
-        user = self.repository.get_user(user_id)
-        candidate = self.repository.get_candidate_by_vk_id(user.id, candidate_data['id'])
-
-        if action == 'like':
-            self.repository.add_view(user.id, candidate.id, is_liked=True)
-            self.vk_client.send_message(user_id, "❤️ Отлично! Ищем дальше...")
-
-        elif action == 'dislike':
-            self.repository.add_view(user.id, candidate.id, is_liked=False)
-            self.vk_client.send_message(user_id, "👎 Продолжаем поиск...")
-
-        elif action == 'favorite':
-            view = self.repository.add_view(user.id, candidate.id, is_liked=True)
-            view.is_favorite = True
-            db_session().commit()
-            self.vk_client.send_message(
-                user_id,
-                f"⭐️ {candidate_data['first_name']} добавлен(а) в избранное!"
+        # Добавляем в избранное
+        if db_candidate:
+            self.repository.add_to_viewed(
+                user.id,
+                db_candidate.id,
+                is_favorite=True
             )
+            self.send_message(
+                user_id, f"⭐️ {candidate['name']} добавлен(а) в избранное!"
+            )
+        else:
+            self.send_message(user_id, "❌ Ошибка при добавлении в избранное")
 
-        # Переходим к следующему кандидату
-        self.current_index[user_id] = self.current_index.get(user_id, 0) + 1
-        self.show_candidate(user_id)
+        # Показываем следующего кандидата
+        self.show_next_candidate(user_id)
 
     def show_favorites(self, user_id):
-        """Показ избранных кандидатов"""
-        user = self.repository.get_user(user_id)
+        """Показать список избранных"""
+        user = self.current_user.get(user_id)
+
+        if not user:
+            self.send_message(user_id, "❌ Ошибка: пользователь не найден")
+            self.show_main_menu(user_id)
+            return
+
         favorites = self.repository.get_favorites(user.id)
 
         if not favorites:
             keyboard = VkKeyboard(one_time=False)
-            keyboard.add_button('Найти пару', VkKeyboardColor.POSITIVE)
+            keyboard.add_button("Найти пару", VkKeyboardColor.POSITIVE)
             keyboard.add_line()
-            keyboard.add_button('Назад', VkKeyboardColor.NEGATIVE)
+            keyboard.add_button("Меню", VkKeyboardColor.SECONDARY)
 
-            self.vk_client.send_message(
-                user_id,
-                "😕 У тебя пока нет избранных кандидатов.",
-                keyboard
+            self.send_message(
+                user_id, "😕 У тебя пока нет избранных кандидатов.", keyboard
             )
             return
 
         set_user_state(user_id, UserState.SHOW_FAVORITES)
 
         for fav in favorites:
-            photos = json.loads(fav.photo_links) if fav.photo_links else []
-            age_text = f", {fav.age} лет" if fav.age else ""
+            # Преобразуем строку с фото обратно в список
+            attachments = []
+            if fav.photos_links:
+                try:
+                    attachments = json.loads(fav.photos_links)
+                except json.JSONDecodeError:
+                    attachments = []
 
-            message = (
-                f"⭐️ {fav.first_name} {fav.last_name}{age_text}\n"
-                f"Ссылка: {fav.profile_link}"
+            self.send_message(
+                user_id,
+                f"⭐️ {fav.first_name} {fav.last_name}\nСсылка: {fav.vk_link}",
+                attachment=",".join(attachments) if attachments else None,
             )
-
-            self.vk_client.send_photos(user_id, photos, message)
 
         # Возвращаем в главное меню
         self.show_main_menu(user_id)
 
+    def send_message(self, user_id, text, keyboard=None, attachment=None):
+        """Универсальный метод отправки сообщений"""
+        params = {
+            "user_id": user_id,
+            "message": text,
+            "random_id": random.getrandbits(64),
+        }
 
-# Обработка действий с кандидатами
-def handle_candidate_callback(self, event):
-    """Обработка callback от кнопок"""
-    user_id = event.user_id
-    payload = json.loads(event.payload)
+        if keyboard:
+            params["keyboard"] = keyboard.get_keyboard()
 
-    if payload['action'] == 'like':
-        self.handle_candidate_action(user_id, 'like', payload['candidate'])
-    elif payload['action'] == 'dislike':
-        self.handle_candidate_action(user_id, 'dislike', payload['candidate'])
-    elif payload['action'] == 'favorite':
-        self.handle_candidate_action(user_id, 'favorite', payload['candidate'])
-    elif payload['action'] == 'end':
-        clear_user_state(user_id)
-        self.show_main_menu(user_id)
+        if attachment:
+            params["attachment"] = attachment
+
+        self.vk_group.messages.send(**params)

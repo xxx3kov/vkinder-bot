@@ -1,72 +1,186 @@
-<center>Пока в разработке</center>
+<div align="center">
+  <h1>💞 VKinder — Бот для знакомств в ВКонтакте</h1>
+  <p><i>Найди свою пару на основе данных профиля VK</i></p>
+  
+  <img src="https://img.shields.io/badge/python-3.8%2B-blue">
+  <img src="https://img.shields.io/badge/postgresql-12%2B-green">
+  <img src="https://img.shields.io/badge/license-MIT-orange">
+  <img src="https://img.shields.io/badge/version-1.0.0-brightgreen">
+</div>
 
-# VKinder — Бот для знакомств в ВКонтакте
+---
 
-Командный проект по поиску подходящих пар на основе данных профиля пользователя VK.
+## 📋 Оглавление
+- [💡 О проекте](#-о-проекте)
+- [🎯 Функционал](#-функционал)
+- [🛠 Технологии](#-технологии)
+- [📁 Структура проекта](#-структура-проекта)
+- [🗄️ База данных](#️-база-данных)
+- [🚀 Установка и запуск](#-установка-и-запуск)
+- [🎮 Использование](#-использование)
+- [👥 Команда проекта](#-команда-проекта)
 
-## Основные функции
-- Поиск людей по городу, возрасту и полу.
-- Отбор 3 самых популярных фотографий профиля (по количеству лайков).
-- Возможность добавлять пользователей в список «Избранное».
-- Просмотр списка избранных кандидатов.
+## 💡 О проекте
 
-## Технологический стек
-- **Python 3.x**
-- **PostgreSQL** (база данных)
-- **SQLAlchemy** (ORM для работы с БД)
-- **vk_api** (библиотека для взаимодействия с VK)
+**VKinder** — это командный проект, представляющий собой бота для социальной сети ВКонтакте. Бот анализирует данные профиля пользователя (возраст, пол, город) и предлагает подходящие анкеты для знакомств, показывая три самые популярные фотографии кандидата.
 
-## 📁 Структура данных
+Проект разработан в рамках учебной программы и демонстрирует навыки работы с API ВКонтакте, базами данных и создание ботов на Python.
+
+---
+
+## 🎯 Функционал
+
+### Основные возможности:
+- ✅ **Автоматический поиск** — бот определяет ваш город, возраст и пол из профиля VK
+- ✅ **Умная фильтрация** — исключает уже просмотренные и закрытые профили
+- ✅ **Топ-3 фото** — отбирает самые популярные фото по количеству лайков
+- ✅ **Избранное** — сохраняйте понравившиеся анкеты в отдельный список
+- ✅ **Пагинация** — удобный просмотр анкет с помощью кнопок
+
+### Команды бота:
+| Кнопка | Действие |
+|--------|----------|
+| `🔍 Найти пару` | Начать поиск кандидатов |
+| `⭐️ В избранное` | Добавить текущего кандидата в избранное |
+| `👎 Дальше` | Перейти к следующему кандидату |
+| `📋 Избранное` | Показать список сохранённых анкет |
+| `🚫 Меню` | Вернуться в главное меню |
+
+---
+
+## 🛠 Технологии
+
+- **Python 3.8+**
+- **PostgreSQL 12+** — база данных
+- **SQLAlchemy** — ORM для работы с БД
+- **VK API** — взаимодействие с социальной сетью
+- **python-dotenv** — управление переменными окружения
+- **vk-api** — библиотека для работы с VK
+
+---
+
+## 📁 Структура проекта
 ```text
 vkinder-bot/
-├── .env                  # Конфигурация (не в репозитории!)
-├── .env.example          # Шаблон конфигурации
-├── .gitignore            # Список исключений для Git
-├── requirements.txt      # Список библиотек
-├── README.md             # Инструкция и описание проекта
-├── config.py             # Читает .env, создает DSN для SQLAlchemy
-|
-├── database/
-│   ├── models.py         # Классы Users, Candidates, Views (Base.metadata)
-│   ├── repository.py     # Класс VKinderRepository (логика запросов)
-│   └── db_session        # engine, SessionLocal, create_all()
+├── 📄 .env.example # Шаблон переменных окружения
+├── 📄 .gitignore # Исключения для Git
+├── 📄 requirements.txt # Зависимости проекта
+├── 📄 README.md # Документация
+├── 📄 config.py # Загрузка конфигурации
+├── 📄 main.py # Точка входа
 │
-├── vk_api/
-│   ├── client.py         # Работа с API (сообщения, авторизация)
-│   └── search.py         # Поиск людей по фильтрам (город, возраст, пол)
+├── 📁 database/ # Работа с БД
+│ ├── 📄 models.py # Модели SQLAlchemy
+│ ├── 📄 repository.py # Методы работы с БД
+│ └── 📄 db_session.py # Настройка подключения
 │
-├── bot/
-│   ├── handlers.py       # Обработка событий LongPoll и нажатий кнопок
-│   └── states.py         # Управление состояниями
+├── 📁 vk_api/ # Взаимодействие с VK
+│ ├── 📄 client.py # Базовый клиент API
+│ └── 📄 search.py # Логика поиска кандидатов
 │
-└── main.py               # Точка входа: инициализация БД и запуск бота
+└── 📁 bot/ # Логика бота
+├── 📄 handlers.py # Обработчики событий
+└── 📄 states.py # Состояния пользователя
 ```
 
 ## 🗄️ База данных
-```sql
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY, 
-    first_name VARCHAR(50) NOT NULL,
-    last_name VARCHAR(50) NOT NULL, 
-    age INTEGER,
-    vk_id BIGINT UNIQUE NOT NULL, 
-    city VARCHAR(50) NOT NULL,
-    gender # узнать что вк отдает по поводу пола (м/ж) или число
-)
 
+### Схема данных (3 таблицы)
+
+```sql
+-- Таблица пользователей бота
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    age INTEGER,
+    vk_id BIGINT UNIQUE NOT NULL,
+    city VARCHAR(50),
+    gender INTEGER NOT NULL  -- 1 - жен, 2 - муж
+);
+
+-- Таблица найденных кандидатов
 CREATE TABLE candidates (
-    id SERIAL PRIMARY KEY, 
+    id SERIAL PRIMARY KEY,
     vk_id BIGINT UNIQUE NOT NULL,
     first_name VARCHAR(50) NOT NULL,
-    last_name VARCHAR(50) NOT NULL
-)
+    last_name VARCHAR(50) NOT NULL,
+    vk_link VARCHAR(100),
+    photos_links TEXT  -- JSON-строка с attachments фото
+);
 
+-- Таблица просмотров и избранного
 CREATE TABLE views (
-    id SERIAL PRIMARY KEY, 
-    is_favorite BOOLEAN NOT NULL,
+    id SERIAL PRIMARY KEY,
+    is_favorite BOOLEAN NOT NULL DEFAULT FALSE,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    candidate_id INTEGER REFERENCES candidates(id) ON DELETE CASCADE
-)
+    candidate_id INTEGER REFERENCES candidates(id) ON DELETE CASCADE,
+    UNIQUE(user_id, candidate_id)
+);
 ```
+## 🚀 Установка и запуск
 
-<center>Пока в разработке</center>
+### Предварительные требования
+- Python 3.8 или выше
+- PostgreSQL 12 или выше
+- Токен сообщества ВКонтакте (инструкция: https://vk.com/dev/bots_docs)
+- Пользовательский токен ВКонтакте (инструкция: https://vk.com/dev/implicit_flow_user)
+
+### Пошаговая инструкция
+
+1. **Клонируйте репозиторий**
+   git clone git clone https://github.com/xxx3kov/vkinder-bot.git
+   cd vkinder-bot
+
+2. **Создайте виртуальное окружение**
+   python -m venv venv
+   
+   Для Linux/Mac:
+   source venv/bin/activate
+   
+   Для Windows:
+   venv\Scripts\activate
+
+3. **Установите зависимости**
+   pip install -r requirements.txt
+
+4. **Настройте переменные окружения**
+
+   Отредактируйте .env, добавьте свои токены и данные БД
+```text
+   Пример .env:
+   VK_GROUP_TOKEN=ваш_токен_группы
+   VK_USER_TOKEN=ваш_пользовательский_токен
+   DB_USER=postgres
+   DB_PASSWORD=ваш_пароль
+   DB_NAME=vkinder
+   DB_HOST=localhost
+   DB_PORT=5432
+```
+5. **Создайте базу данных**
+   psql -U postgres -c "CREATE DATABASE vkinder;"
+
+6. **Запустите бота**
+   python main.py
+
+## 🎮 Использование
+
+### Начало работы
+1. Напишите боту в личные сообщения ВКонтакте
+2. Отправьте команду «Начать» или «Меню»
+3. Бот автоматически определит ваши данные из профиля
+4. Нажмите «Найти пару» для начала поиска
+
+### Работа с анкетами
+- ⭐️ В избранное — сохранить текущую анкету
+- 👎 Дальше — пропустить и показать следующую
+- 🚫 Меню — вернуться в главное меню
+
+### Просмотр избранного
+1. В главном меню нажмите «Избранное»
+2. Бот покажет все сохранённые анкеты с фото
+3. После просмотра автоматически вернёт в меню
+
+## 👥 Команда проекта
+- Студент 1 — разработка логики бота, интеграция с VK API
+- Студент 2 — проектирование БД, работа с SQLAlchemy

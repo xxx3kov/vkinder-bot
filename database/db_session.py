@@ -4,21 +4,25 @@
 Обеспечивает создание и управление сессиями БД с использованием
 паттерна Thread-Local для безопасной работы в многопоточной среде.
 """
-from database.models import Base
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-# from logger import logger # в будущем 
 
-engine = sq.create_engine(DSN)
+from config import DSN
+from database.models import Base
+
+engine = create_engine(DSN)
 SessionLocal = sessionmaker(bind=engine)
 
-def create_tables():
+
+def init_db():
     """Создать все таблицы в БД"""
     # Base.metadata.drop_all(engine)  # удалить все таблицы, удаляется при
     # каждом запуске, если не закомментировать
-    print("Таблицы удалены")
+    # print("Таблицы удалены")
     Base.metadata.create_all(engine)
     print(f"Созданы таблицы: {list(Base.metadata.tables.keys())}")
+
 
 def get_db():
     """Функция для получения сессии"""
