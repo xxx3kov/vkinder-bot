@@ -58,25 +58,32 @@
 ## 📁 Структура проекта
 ```text
 vkinder-bot/
-├── 📄 .env.example # Шаблон переменных окружения
 ├── 📄 .gitignore # Исключения для Git
-├── 📄 requirements.txt # Зависимости проекта
+├── 📄 requirements-test.txt # Зависимости теста
 ├── 📄 README.md # Документация
 ├── 📄 config.py # Загрузка конфигурации
-├── 📄 main.py # Точка входа
 │
 ├── 📁 database/ # Работа с БД
-│ ├── 📄 models.py # Модели SQLAlchemy
-│ ├── 📄 repository.py # Методы работы с БД
-│ └── 📄 db_session.py # Настройка подключения
+│     └── 📄 db_session.py 
 │
-├── 📁 vk_api/ # Взаимодействие с VK
-│ ├── 📄 client.py # Базовый клиент API
-│ └── 📄 search.py # Логика поиска кандидатов
+├── 📁 tests # тесты
+│     ├── 📄 test_bot_age.py
+│     ├── 📄 test_db.py
+│     └── 📄 test_fav.py
 │
-└── 📁 bot/ # Логика бота
-├── 📄 handlers.py # Обработчики событий
-└── 📄 states.py # Состояния пользователя
+└── 📁 vkinder-bot/
+      ├── 📄 .flake8
+      ├── 📄 main.py
+      ├── 📄 requirements.txt
+      ├── 📄 storage.py
+      |
+      ├── 📁 bot/ # Логика бота
+      |     ├── 📄 handlers.py
+      |     └── 📄 states.py
+      |
+      └── 📁 vk_client/ # Взаимодействие с VK
+            ├── 📄 client.py 
+            └── 📄 search.py
 ```
 
 ## 🗄️ База данных
